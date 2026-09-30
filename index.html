@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1f2a24">
+<title>ArrowLog</title>
+<style>
+:root{
+  --bg:#f5f3ee;--card:#fffdf8;--ink:#1d211e;--muted:#6b716c;--line:#e2ded4;
+  --accent:#2f6b4f;--accent-soft:#dcebe2;--warn:#b5542a;--warn-soft:#f6e1d6;--bar:#2f6b4f;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141715;--card:#1c201d;--ink:#e9ece8;--muted:#9aa29c;--line:#2c322e;
+  --accent:#7cc39c;--accent-soft:#1f3a2c;--warn:#e89a72;--warn-soft:#3b2519;--bar:#7cc39c;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px 16px 48px}
+h1{font-size:22px;margin:4px 0 2px;letter-spacing:-.01em}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:28px 0 10px;font-weight:600}
+.sub{color:var(--muted);font-size:14px}
+button,select,input{font:inherit;color:inherit}
+.btn{background:var(--accent);color:var(--bg);border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.status{margin:12px 0;padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:14px}
+.status b{font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media (min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.tile .n{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile .l{color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px;width:max-content}
+.tabs button{border:0;background:transparent;padding:6px 12px;border-radius:8px;cursor:pointer;color:var(--muted)}
+.tabs button.on{background:var(--accent-soft);color:var(--ink);font-weight:600}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 8px 6px;margin-top:10px}
+.chart svg{display:block;width:100%;height:auto}
+.chart text{fill:var(--muted);font-size:10px}
+.sess{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
+.sess .top{display:flex;justify-content:space-between;gap:8px}
+.sess .big{font-weight:700;font-variant-numeric:tabular-nums}
+.ends{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.end{min-width:28px;text-align:center;padding:2px 6px;border-radius:6px;background:var(--accent-soft);font-size:13px;font-variant-numeric:tabular-nums}
+.end.off{background:var(--warn-soft);color:var(--warn);font-weight:600}
+.small{font-size:13px;color:var(--muted)}
+details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+summary{cursor:pointer;font-weight:600}
+label{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0}
+label input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.empty{color:var(--muted);padding:12px 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>ArrowLog</h1>
+  <div class="sub">Arrows counted by your bow pod</div>
+
+  <div class="status" id="status">Not connected.</div>
+  <div class="row">
+    <button class="btn" id="connect">Connect pod &amp; sync</button>
+    <button class="btn ghost" id="disconnect" hidden>Disconnect</button>
+  </div>
+
+  <h2>Totals</h2>
+  <div class="grid">
+    <div class="tile"><div class="n" id="t-today">0</div><div class="l">Today</div></div>
+    <div class="tile"><div class="n" id="t-week">0</div><div class="l">This week</div></div>
+    <div class="tile"><div class="n" id="t-month">0</div><div class="l">This month</div></div>
+    <div class="tile"><div class="n" id="t-all">0</div><div class="l">All time</div></div>
+  </div>
+
+  <h2>History</h2>
+  <div class="tabs" id="tabs">
+    <button data-v="day" class="on">Days</button>
+    <button data-v="week">Weeks</button>
+    <button data-v="month">Months</button>
+  </div>
+  <div class="chart" id="chart"></div>
+
+  <h2>Sessions</h2>
+  <div id="sessions"></div>
+
+  <h2>Settings &amp; data</h2>
+  <details>
+    <summary>Settings</summary>
+    <label>Arrows per end <input type="number" id="s-arrows" min="1" max="12"></label>
+    <label>New end after a pause of (seconds) <input type="number" id="s-endgap" min="20" max="900"></label>
+    <label>New session after a pause of (minutes) <input type="number" id="s-sessgap" min="5" max="600"></label>
+    <label>Clear pod memory after sync when it is fuller than (%) <input type="number" id="s-clear" min="0" max="100"></label>
+  </details>
+  <div class="row" style="margin-top:10px">
+    <button class="btn ghost" id="csv">Export CSV</button>
+    <button class="btn ghost" id="backup">Backup (JSON)</button>
+    <button class="btn ghost" id="restore">Restore backup</button>
+    <input type="file" id="file" accept=".json" hidden>
+  </div>
+  <p class="small">Data is kept in this browser. Make a backup now and then. Bluetooth needs Chrome or Edge on Android, Windows, macOS or ChromeOS, or the Bluefy browser on iPhone.</p>
+</main>
+
+<script>
+const SVC  = 'a7c10000-5b1e-4c5a-9d1e-3b7a0c0f0ee0';
+const U = n => 'a7c1000' + n + '-5b1e-4c5a-9d1e-3b7a0c0f0ee0';
+const UUID_TIME = U(1), UUID_INFO = U(2), UUID_CTRL = U(3), UUID_DATA = U(4);
+
+// ---------- storage ----------
+const KEY = 'arrowlog.v1';
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.shots) return d; } catch (e) {}
+  return { shots: [], nextIndex: 0, settings: { arrows: 6, endGap: 100, sessGap: 45, clearAt: 50 } };
+}
+let db = load();
+function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { setStatus('Could not save in this browser – export a backup.'); } }
+
+// ---------- analysis (exposed for testing) ----------
+function groupSessions(shots, s) {
+  const dated = shots.filter(x => x.t > 1600000000).sort((a, b) => a.t - b.t);
+  const sessions = [];
+  let cur = null, end = null, prev = null;
+  for (const x of dated) {
+    if (!cur || x.t - prev > s.sessGap * 60) {
+      cur = { start: x.t, stop: x.t, ends: [], shots: 0 }; sessions.push(cur); end = null;
+    }
+    if (!end || x.t - prev > s.endGap) { end = { start: x.t, n: 0 }; cur.ends.push(end); }
+    end.n++; cur.shots++; cur.stop = x.t; prev = x.t;
+  }
+  return sessions;
+}
+function dayKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function weekStart(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const wd = (x.getDay() + 6) % 7; x.setDate(x.getDate() - wd); return x; }
+function monthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function totals(shots, now = new Date()) {
+  const today = dayKey(now), wk = weekStart(now).getTime(), mo = monthKey(now);
+  let t = 0, w = 0, m = 0;
+  for (const x of shots) {
+    if (x.t < 1600000000) continue;
+    const d = new Date(x.t * 1000);
+    if (dayKey(d) === today) t++;
+    if (weekStart(d).getTime() === wk) w++;
+    if (monthKey(d) === mo) m++;
+  }
+  return { today: t, week: w, month: m, all: shots.length };
+}
+function buckets(shots, mode, now = new Date()) {
+  const out = [];
+  if (mode === 'day') {
+    for (let i = 29; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i); out.push({ key: dayKey(d), label: d.getDate() === 1 || i === 29 || i % 7 === 0 ? d.getDate() + '.' + (d.getMonth() + 1) + '.' : '', n: 0 }); }
+    const idx = Object.fromEntries(out.map((b, i) => [b.key, i]));
+    for (const x of shots) { const k = dayKey(new Date(x.t * 1000)); if (k in idx) out[idx[k]].n++; }
+  } else if (mode === 'week') {
+    const w0 = weekStart(now);
+    for (let i = 11; i >= 0; i--) { const d = new Date(w0); d.setDate(d.getDate() - 7 * i); out.push({ key: d.getTime(), label: i % 2 === 0 ? d.getDate() + '.' + (d.getMonth() + 1) + '.' : '', n: 0 }); }
+    const idx = Object.fromEntries(out.map((b, i) => [b.key, i]));
+    for (const x of shots) { const k = weekStart(new Date(x.t * 1000)).getTime(); if (k in idx) out[idx[k]].n++; }
+  } else {
+    const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ key: monthKey(d), label: names[d.getMonth()], n: 0 }); }
+    const idx = Object.fromEntries(out.map((b, i) => [b.key, i]));
+    for (const x of shots) { const k = monthKey(new Date(x.t * 1000)); if (k in idx) out[idx[k]].n++; }
+  }
+  return out;
+}
+
+// ---------- rendering ----------
+let chartMode = 'day';
+const $ = id => document.getElementById(id);
+function setStatus(html) { $('status').innerHTML = html; }
+
+function renderChart() {
+  const b = buckets(db.shots, chartMode);
+  const W = 340, H = 150, pad = 18, top = 16;
+  const max = Math.max(6, ...b.map(x => x.n));
+  const bw = (W - 8) / b.length;
+  let s = `<svg viewBox="0 0 ${W} ${H + pad}" role="img" aria-label="Arrows per ${chartMode}">`;
+  s += `<line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/>`;
+  b.forEach((x, i) => {
+    const h = x.n ? Math.max(2, (x.n / max) * (H - top)) : 0;
+    const X = 4 + i * bw + bw * 0.15, w = bw * 0.7;
+    if (h) s += `<rect x="${X}" y="${H - h}" width="${w}" height="${h}" rx="2" fill="var(--bar)"><title>${x.n} arrows</title></rect>`;
+    if (x.n && (b.length <= 12 || x.n === max)) s += `<text x="${X + w / 2}" y="${H - h - 3}" text-anchor="middle">${x.n}</text>`;
+    if (x.label) s += `<text x="${X + w / 2}" y="${H + 13}" text-anchor="middle">${x.label}</text>`;
+  });
+  $('chart').innerHTML = s + '</svg>';
+}
+
+function fmtTime(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function fmtDate(t) { return new Date(t * 1000).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); }
+
+function renderSessions() {
+  const s = db.settings;
+  const sess = groupSessions(db.shots, s).reverse().slice(0, 40);
+  const undated = db.shots.filter(x => x.t <= 1600000000).length;
+  if (!sess.length && !undated) { $('sessions').innerHTML = '<div class="empty">No arrows yet. Shoot, then connect to sync.</div>'; return; }
+  let h = '';
+  for (const x of sess) {
+    const off = x.ends.filter(e => e.n !== s.arrows).length;
+    h += `<div class="sess"><div class="top"><div><div>${fmtDate(x.start)}</div><div class="small">${fmtTime(x.start)}–${fmtTime(x.stop)} · ${x.ends.length} ends${off ? ` · ${off} not ${s.arrows}` : ''}</div></div><div class="big">${x.shots}</div></div><div class="ends">`;
+    for (const e of x.ends) h += `<span class="end${e.n !== s.arrows ? ' off' : ''}" title="${fmtTime(e.start)}">${e.n}</span>`;
+    h += '</div></div>';
+  }
+  if (undated) h += `<div class="small">${undated} arrows have no date (pod clock was never set). They count in "All time".</div>`;
+  $('sessions').innerHTML = h;
+}
+
+function render() {
+  const t = totals(db.shots);
+  $('t-today').textContent = t.today; $('t-week').textContent = t.week;
+  $('t-month').textContent = t.month; $('t-all').textContent = t.all;
+  renderChart(); renderSessions();
+}
+
+// ---------- Bluetooth ----------
+let dev = null, chars = {}, info = null, dumpResolve = null, incoming = [];
+
+function parseInfo(dv) {
+  return { total: dv.getUint32(0, true), base: dv.getUint32(4, true), mv: dv.getUint16(8, true),
+           storage: dv.getUint8(10), exact: !!(dv.getUint8(11) & 1), active: !!(dv.getUint8(11) & 2), fw: dv.getUint8(12) };
+}
+function parseData(dv) {
+  const first = dv.getUint32(0, true);
+  if (first === 0xFFFFFFFF) return { end: true, total: dv.getUint32(4, true) };
+  const recs = [];
+  for (let o = 4, i = 0; o + 8 <= dv.byteLength; o += 8, i++)
+    recs.push({ i: first + i, t: dv.getUint32(o, true), peak: dv.getUint16(o + 4, true) / 10, aim: dv.getUint8(o + 6) / 10, flags: dv.getUint8(o + 7) });
+  return { recs };
+}
+
+function showInfo() {
+  if (!info) return;
+  const v = info.mv ? (info.mv / 1000).toFixed(2) + ' V' : '–';
+  setStatus(`<b>Connected.</b> Pod total ${info.total} · battery ${v} · memory ${info.storage}% used`);
+}
+
+async function attach(device) {
+  dev = device;
+  dev.addEventListener('gattserverdisconnected', () => { $('disconnect').hidden = true; setStatus('Disconnected.'); });
+  setStatus('Connecting…');
+  const server = await dev.gatt.connect();
+  const svc = await server.getPrimaryService(SVC);
+  for (const [k, u] of [['time', UUID_TIME], ['info', UUID_INFO], ['ctrl', UUID_CTRL], ['data', UUID_DATA]]) chars[k] = await svc.getCharacteristic(u);
+  $('disconnect').hidden = false;
+
+  const now = new Uint8Array(4); new DataView(now.buffer).setUint32(0, Math.floor(Date.now() / 1000), true);
+  await chars.time.writeValue(now);
+
+  chars.data.addEventListener('characteristicvaluechanged', e => {
+    const p = parseData(e.target.value);
+    if (p.end) { if (dumpResolve) dumpResolve(p.total); dumpResolve = null; } else incoming.push(...p.recs);
+  });
+  await chars.data.startNotifications();
+  chars.info.addEventListener('characteristicvaluechanged', async e => {
+    const prev = info ? info.total : 0;
+    info = parseInfo(e.target.value); showInfo();
+    if (info.total > prev) await sync(false);     // live: new arrow shot while connected
+  });
+  await chars.info.startNotifications();
+  info = parseInfo(await chars.info.readValue());
+  await sync(true);
+}
+
+let syncing = false;
+async function sync(mayClear) {
+  if (syncing || !chars.ctrl) return; syncing = true;
+  try {
+    incoming = [];
+    const from = Math.max(db.nextIndex, info.base);
+    const done = new Promise(r => { dumpResolve = r; setTimeout(() => r(null), 30000); });
+    const cmd = new Uint8Array(5); cmd[0] = 1; new DataView(cmd.buffer).setUint32(1, from, true);
+    await chars.ctrl.writeValue(cmd);
+    const total = await done;
+    const known = new Set(db.shots.map(x => x.i));
+    const fresh = incoming.filter(x => !known.has(x.i));
+    db.shots.push(...fresh);
+    if (total !== null) db.nextIndex = Math.max(db.nextIndex, total);
+    save(); render();
+    info = parseInfo(await chars.info.readValue()); showInfo();
+    if (fresh.length) setStatus($('status').innerHTML + ` · <b>${fresh.length} new</b>`);
+    if (mayClear && total !== null && db.nextIndex >= info.total && info.storage >= db.settings.clearAt && info.total > info.base) {
+      const c = new Uint8Array(5); c[0] = 2; new DataView(c.buffer).setUint32(1, info.total, true);
+      await chars.ctrl.writeValue(c);
+    }
+  } catch (e) { setStatus('Sync problem: ' + e.message); }
+  syncing = false;
+}
+
+$('connect').onclick = async () => {
+  if (!navigator.bluetooth) { setStatus('This browser has no Web Bluetooth. Use Chrome/Edge (Android, desktop) or Bluefy (iPhone), over https.'); return; }
+  try { await attach(await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }] })); }
+  catch (e) { setStatus(e.name === 'NotFoundError' ? 'No pod selected.' : 'Could not connect: ' + e.message); }
+};
+$('disconnect').onclick = () => { if (dev && dev.gatt.connected) dev.gatt.disconnect(); };
+
+// Reconnect without the chooser when the browser supports remembered devices
+(async () => {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
+  try {
+    const list = await navigator.bluetooth.getDevices();
+    const d = list.find(x => x.name === 'ArrowCounter'); if (!d) return;
+    setStatus('Looking for your pod…');
+    if (d.watchAdvertisements) {
+      const ac = new AbortController();
+      d.addEventListener('advertisementreceived', async () => { ac.abort(); try { await attach(d); } catch (e) { setStatus('Tap Connect to sync.'); } }, { once: true });
+      await d.watchAdvertisements({ signal: ac.signal });
+      setTimeout(() => { if (!d.gatt.connected) { ac.abort(); setStatus('Pod not in range. Tap Connect when it is.'); } }, 15000);
+    } else await attach(d);
+  } catch (e) { setStatus('Not connected.'); }
+})();
+
+// ---------- settings & data ----------
+const S = { arrows: 's-arrows', endGap: 's-endgap', sessGap: 's-sessgap', clearAt: 's-clear' };
+for (const [k, id] of Object.entries(S)) {
+  $(id).value = db.settings[k];
+  $(id).onchange = e => { const v = Number(e.target.value); if (v >= 0) { db.settings[k] = v; save(); render(); } };
+}
+$('tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; chartMode = b.dataset.v; [...$('tabs').children].forEach(x => x.classList.toggle('on', x === b)); renderChart(); };
+
+function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+$('csv').onclick = () => {
+  const rows = ['index,datetime_local,unix,peak_g,aim_s,clock_exact'];
+  for (const x of [...db.shots].sort((a, b) => a.t - b.t)) rows.push([x.i, x.t > 1600000000 ? new Date(x.t * 1000).toLocaleString('sv') : '', x.t, x.peak, x.aim, x.flags & 1].join(','));
+  download('arrowlog.csv', rows.join('\n'), 'text/csv');
+};
+$('backup').onclick = () => download('arrowlog-backup.json', JSON.stringify(db), 'application/json');
+$('restore').onclick = () => $('file').click();
+$('file').onchange = async e => {
+  try {
+    const d = JSON.parse(await e.target.files[0].text());
+    if (!Array.isArray(d.shots)) throw new Error('not an ArrowLog backup');
+    const known = new Set(db.shots.map(x => x.i));
+    db.shots.push(...d.shots.filter(x => !known.has(x.i)));
+    db.nextIndex = Math.max(db.nextIndex, d.nextIndex || 0);
+    save(); render(); setStatus('Backup restored.');
+  } catch (err) { setStatus('Restore failed: ' + err.message); }
+};
+
+render();
+if (typeof window !== 'undefined') window.ArrowLog = { groupSessions, totals, buckets, parseData, parseInfo };
+</script>
+</body>
+</html>
