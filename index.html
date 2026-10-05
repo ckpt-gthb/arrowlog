@@ -24,6 +24,10 @@ button,select,input{font:inherit;color:inherit}
 .btn{background:var(--accent);color:var(--bg);border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer}
 .btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
 .btn:disabled{opacity:.5}
+.btn.danger{color:var(--warn);border-color:var(--warn)}
+.endbox{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.endn{font-size:44px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.endof{color:var(--muted);font-size:18px;margin-left:6px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .status{margin:12px 0;padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:14px}
 .status b{font-weight:600}
@@ -63,6 +67,12 @@ label input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radiu
     <button class="btn ghost" id="disconnect" hidden>Disconnect</button>
   </div>
 
+  <h2>This end</h2>
+  <div class="endbox">
+    <div><span class="endn" id="t-end">0</span><span class="endof" id="t-endof">/ 6</span></div>
+    <button class="btn ghost" id="newend">New end</button>
+  </div>
+
   <h2>Totals</h2>
   <div class="grid">
     <div class="tile"><div class="n" id="t-today">0</div><div class="l">Today</div></div>
@@ -95,6 +105,8 @@ label input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radiu
     <button class="btn ghost" id="backup">Backup (JSON)</button>
     <button class="btn ghost" id="restore">Restore backup</button>
     <input type="file" id="file" accept=".json" hidden>
+    <button class="btn ghost danger" id="resetday">Reset today</button>
+    <button class="btn ghost danger" id="reset">Reset all stats</button>
   </div>
   <p class="small">Data is kept in this browser. Make a backup now and then. Bluetooth needs Chrome or Edge on Android, Windows, macOS or ChromeOS, or the Bluefy browser on iPhone.</p>
 </main>
@@ -108,13 +120,14 @@ const UUID_TIME = U(1), UUID_INFO = U(2), UUID_CTRL = U(3), UUID_DATA = U(4);
 const KEY = 'arrowlog.v1';
 function load() {
   try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.shots) return d; } catch (e) {}
-  return { shots: [], nextIndex: 0, settings: { arrows: 6, endGap: 100, sessGap: 45, clearAt: 50 } };
+  return { shots: [], nextIndex: 0, endMarks: [], settings: { arrows: 6, endGap: 100, sessGap: 45, clearAt: 50 } };
 }
 let db = load();
+if (!Array.isArray(db.endMarks)) db.endMarks = [];
 function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { setStatus('Could not save in this browser – export a backup.'); } }
 
 // ---------- analysis (exposed for testing) ----------
-function groupSessions(shots, s) {
+function groupSessions(shots, s, marks = []) {
   const dated = shots.filter(x => x.t > 1600000000).sort((a, b) => a.t - b.t);
   const sessions = [];
   let cur = null, end = null, prev = null;
@@ -122,7 +135,8 @@ function groupSessions(shots, s) {
     if (!cur || x.t - prev > s.sessGap * 60) {
       cur = { start: x.t, stop: x.t, ends: [], shots: 0 }; sessions.push(cur); end = null;
     }
-    if (!end || x.t - prev > s.endGap) { end = { start: x.t, n: 0 }; cur.ends.push(end); }
+    const marked = prev !== null && marks.some(m => m > prev && m <= x.t);   // "New end" pressed in between
+    if (!end || x.t - prev > s.endGap || marked) { end = { start: x.t, n: 0 }; cur.ends.push(end); }
     end.n++; cur.shots++; cur.stop = x.t; prev = x.t;
   }
   return sessions;
@@ -189,7 +203,7 @@ function fmtDate(t) { return new Date(t * 1000).toLocaleDateString([], { weekday
 
 function renderSessions() {
   const s = db.settings;
-  const sess = groupSessions(db.shots, s).reverse().slice(0, 40);
+  const sess = groupSessions(db.shots, s, db.endMarks).reverse().slice(0, 40);
   const undated = db.shots.filter(x => x.t <= 1600000000).length;
   if (!sess.length && !undated) { $('sessions').innerHTML = '<div class="empty">No arrows yet. Shoot, then connect to sync.</div>'; return; }
   let h = '';
@@ -203,7 +217,21 @@ function renderSessions() {
   $('sessions').innerHTML = h;
 }
 
+// arrows in the end that is still open: last end, if its last arrow is recent and "New end" wasn't pressed since
+function currentEnd(nowSec = Date.now() / 1000) {
+  const sess = groupSessions(db.shots, db.settings, db.endMarks);
+  if (!sess.length) return 0;
+  const last = sess[sess.length - 1], end = last.ends[last.ends.length - 1];
+  if (nowSec - last.stop > db.settings.endGap) return 0;
+  if (db.endMarks.some(m => m > last.stop)) return 0;
+  return end.n;
+}
+
 function render() {
+  const e = currentEnd();
+  $('t-end').textContent = e;
+  $('t-endof').textContent = '/ ' + db.settings.arrows;
+  $('t-end').style.color = e === db.settings.arrows ? 'var(--accent)' : (e > db.settings.arrows ? 'var(--warn)' : '');
   const t = totals(db.shots);
   $('t-today').textContent = t.today; $('t-week').textContent = t.week;
   $('t-month').textContent = t.month; $('t-all').textContent = t.all;
@@ -334,8 +362,48 @@ $('file').onchange = async e => {
   } catch (err) { setStatus('Restore failed: ' + err.message); }
 };
 
+// New end: no confirmation. The next arrow starts a new end.
+$('newend').onclick = () => {
+  db.endMarks.push(Math.floor(Date.now() / 1000));
+  if (db.endMarks.length > 500) db.endMarks = db.endMarks.slice(-500);
+  save(); render();
+  setStatus('New end started.');
+};
+
+// Reset today: delete today's arrows on this phone (with confirmation).
+$('resetday').onclick = () => {
+  const today = dayKey(new Date());
+  const n = db.shots.filter(x => x.t > 1600000000 && dayKey(new Date(x.t * 1000)) === today).length;
+  if (!confirm(`Delete today's ${n} arrows? This cannot be undone.`)) return;
+  db.shots = db.shots.filter(x => !(x.t > 1600000000 && dayKey(new Date(x.t * 1000)) === today));
+  db.endMarks.push(Math.floor(Date.now() / 1000));
+  save(); render();
+  setStatus(`Today's ${n} arrows deleted.`);
+};
+
+// Reset: delete the whole history on this phone. Arrows already on the pod are NOT imported
+// again (nextIndex is kept), and if the pod is connected its memory is cleared as well.
+$('reset').onclick = async () => {
+  const n = db.shots.length;
+  if (!confirm(`Delete all ${n} arrows and the whole history on this phone? This cannot be undone. Tip: make a backup first.`)) return;
+  if (chars.ctrl && dev && dev.gatt.connected) {
+    try {
+      await sync(false);                                   // pick up anything new first, so it is not imported later
+      info = parseInfo(await chars.info.readValue());
+      const c = new Uint8Array(5); c[0] = 2; new DataView(c.buffer).setUint32(1, info.total, true);
+      await chars.ctrl.writeValue(c);                      // clear the pod's memory
+      db.nextIndex = Math.max(db.nextIndex, info.total);
+    } catch (e) { /* phone data is reset anyway */ }
+  }
+  db.shots = [];
+  db.endMarks = [];
+  save(); render();
+  setStatus('All stats reset.' + (dev && dev.gatt.connected ? ' Pod memory cleared too.' : ''));
+};
+
 render();
-if (typeof window !== 'undefined') window.ArrowLog = { groupSessions, totals, buckets, parseData, parseInfo };
+setInterval(() => { $('t-end').textContent = currentEnd(); }, 10000);
+if (typeof window !== 'undefined') window.ArrowLog = { groupSessions, totals, buckets, parseData, parseInfo, currentEnd, getDb: () => db };
 </script>
 </body>
 </html>
