@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#1f2a24">
-<title>ArrowLog</title>
+<title>PfeilZaehler3000</title>
 <style>
 :root{
   --bg:#f5f3ee;--card:#fffdf8;--ink:#1d211e;--muted:#6b716c;--line:#e2ded4;
@@ -25,6 +25,15 @@ button,select,input{font:inherit;color:inherit}
 .btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
 .btn:disabled{opacity:.5}
 .btn.danger{color:var(--warn);border-color:var(--warn)}
+.btn.big{width:100%;padding:14px 16px;font-size:17px}
+.btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:8px}
+.btns .btn{width:100%;min-height:44px}
+.btns[hidden]{display:none}
+.btns.three{grid-template-columns:repeat(3,1fr)}
+.btns.two{grid-template-columns:repeat(2,1fr)}
+.btns.three .btn{padding:10px 6px}
+.endbox .btn{min-height:44px;min-width:120px}
+.group{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:16px 0 0}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;padding:16px;z-index:10}
 .overlay[hidden]{display:none}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;width:100%;max-width:640px;display:flex;flex-direction:column;gap:10px}
@@ -62,14 +71,14 @@ label input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radiu
 </head>
 <body>
 <main>
-  <h1>ArrowLog</h1>
-  <div class="sub">Arrows counted by your bow pod · version 1.3 · 5 Oct 2026 · GitHub blows</div>
+  <h1>PfeilZaehler3000</h1>
+  <div class="sub">Arrows counted automatically · version 1.4 · 8 Oct 2026</div>
 
   <div class="status" id="status">Not connected.</div>
-  <div class="row">
-    <button class="btn" id="connect">Connect pod &amp; sync</button>
-    <button class="btn ghost" id="disconnect" hidden>Disconnect</button>
+  <button class="btn big" id="connect">Connect pod &amp; sync</button>
+  <div class="btns two" id="podbtns" hidden>
     <button class="btn ghost" id="choose" hidden>Choose pod</button>
+    <button class="btn ghost" id="disconnect" hidden>Disconnect</button>
   </div>
   <p class="small">After the first connect the page stays connected and updates by itself after every arrow. Coming back to the page reconnects automatically.</p>
 
@@ -106,11 +115,15 @@ label input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radiu
     <label>New session after a pause of (minutes) <input type="number" id="s-sessgap" min="5" max="600"></label>
     <label>Clear pod memory after sync when it is fuller than (%) <input type="number" id="s-clear" min="0" max="100"></label>
   </details>
-  <div class="row" style="margin-top:10px">
+  <div class="group">Export &amp; backup</div>
+  <div class="btns three">
     <button class="btn ghost" id="csv">Export CSV</button>
-    <button class="btn ghost" id="backup">Backup (JSON)</button>
-    <button class="btn ghost" id="restore">Restore backup</button>
-    <input type="file" id="file" accept=".json" hidden>
+    <button class="btn ghost" id="backup">Backup</button>
+    <button class="btn ghost" id="restore">Restore</button>
+  </div>
+  <input type="file" id="file" accept=".json" hidden>
+  <div class="group">Reset</div>
+  <div class="btns two">
     <button class="btn ghost danger" id="resetday">Reset today</button>
     <button class="btn ghost danger" id="reset">Reset all stats</button>
   </div>
@@ -136,9 +149,12 @@ const U = n => 'a7c1000' + n + '-5b1e-4c5a-9d1e-3b7a0c0f0ee0';
 const UUID_TIME = U(1), UUID_INFO = U(2), UUID_CTRL = U(3), UUID_DATA = U(4);
 
 // ---------- storage ----------
-const KEY = 'arrowlog.v1';
+const KEY = 'pfeilzaehler3000.v1';
+const OLD_KEY = 'arrowlog.v1';                     // data saved before the rename is taken over once
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && d.shots) return d; } catch (e) {}
+  for (const k of [KEY, OLD_KEY]) {
+    try { const d = JSON.parse(localStorage.getItem(k)); if (d && d.shots) return d; } catch (e) {}
+  }
   return { shots: [], nextIndex: 0, endMarks: [], settings: { arrows: 6, endGap: 100, sessGap: 45, clearAt: 50 } };
 }
 let db = load();
@@ -266,7 +282,7 @@ let dev = null, chars = {}, info = null, dumpResolve = null, incoming = [];
 
 function parseInfo(dv) {
   return { total: dv.getUint32(0, true), base: dv.getUint32(4, true), mv: dv.getUint16(8, true),
-           storage: dv.getUint8(10), exact: !!(dv.getUint8(11) & 1), active: !!(dv.getUint8(11) & 2), fw: dv.getUint8(12) };
+           storage: dv.getUint8(10), at: Date.now(), exact: !!(dv.getUint8(11) & 1), active: !!(dv.getUint8(11) & 2), fw: dv.getUint8(12) };
 }
 function parseData(dv) {
   const first = dv.getUint32(0, true);
@@ -280,7 +296,8 @@ function parseData(dv) {
 function showInfo() {
   if (!info) return;
   const v = info.mv ? (info.mv / 1000).toFixed(2) + ' V' : '–';
-  setStatus(`<b>Connected.</b> Pod total ${info.total} · battery ${v} · memory ${info.storage}% used`);
+  const at = new Date(info.at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  setStatus(`<b>Connected.</b> Pod total ${info.total} · battery ${v} (${at}) · memory ${info.storage}% used`);
 }
 
 let userDisconnect = false, retryTimer = null, retryUntil = 0;
@@ -289,6 +306,7 @@ function updateButtons() {
   $('connect').textContent = dev ? (connected ? 'Update now' : 'Reconnect & update') : 'Connect pod & sync';
   $('disconnect').hidden = !connected;
   $('choose').hidden = !dev;
+  $('podbtns').hidden = !dev;
 }
 // keep trying to reconnect for a while (pod out of range, phone screen was off, ...)
 function scheduleReconnect(seconds = 60) {
@@ -319,7 +337,7 @@ async function attach(device) {
   const server = await dev.gatt.connect();
   const svc = await server.getPrimaryService(SVC);
   for (const [k, u] of [['time', UUID_TIME], ['info', UUID_INFO], ['ctrl', UUID_CTRL], ['data', UUID_DATA]]) chars[k] = await svc.getCharacteristic(u);
-  $('disconnect').hidden = false;
+  $('disconnect').hidden = false; $('podbtns').hidden = false;
 
   const now = new Uint8Array(4); new DataView(now.buffer).setUint32(0, Math.floor(Date.now() / 1000), true);
   await chars.time.writeValue(now);
@@ -389,7 +407,7 @@ document.addEventListener('visibilitychange', async () => {
   if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
   try {
     const list = await navigator.bluetooth.getDevices();
-    const d = list.find(x => x.name === 'ArrowCounter'); if (!d) return;
+    const d = list.find(x => x.name === 'PfeilZaehler3000') || list[0]; if (!d) return;
     setStatus('Looking for your pod…');
     if (d.watchAdvertisements) {
       const ac = new AbortController();
@@ -447,7 +465,7 @@ $('box-copy').onclick = async () => {
 };
 function restoreFrom(text) {
   const d = JSON.parse(text);
-  if (!Array.isArray(d.shots)) throw new Error('not an ArrowLog backup');
+  if (!Array.isArray(d.shots)) throw new Error('not a PfeilZaehler3000 backup');
   const known = new Set(db.shots.map(x => x.i));
   db.shots.push(...d.shots.filter(x => !known.has(x.i)));
   db.nextIndex = Math.max(db.nextIndex, d.nextIndex || 0);
@@ -462,9 +480,9 @@ $('box-restore').onclick = () => {
 $('csv').onclick = () => {
   const rows = ['index,datetime_local,unix,peak_g,aim_s,clock_exact'];
   for (const x of [...db.shots].sort((a, b) => a.t - b.t)) rows.push([x.i, x.t > 1600000000 ? new Date(x.t * 1000).toLocaleString('sv') : '', x.t, x.peak, x.aim, x.flags & 1].join(','));
-  exportText('arrowlog.csv', rows.join('\n'), 'text/csv');
+  exportText('PfeilZaehler3000.csv', rows.join('\n'), 'text/csv');
 };
-$('backup').onclick = () => exportText('arrowlog-backup.json', JSON.stringify(db), 'application/json');
+$('backup').onclick = () => exportText('PfeilZaehler3000-backup.json', JSON.stringify(db), 'application/json');
 $('restore').onclick = () => showText('Restore backup', '', true);
 $('box-file').onclick = () => $('file').click();
 $('file').onchange = async e => {
@@ -515,7 +533,7 @@ $('reset').onclick = async () => {
 render();
 updateButtons();
 setInterval(() => { $('t-end').textContent = currentEnd(); }, 10000);
-if (typeof window !== 'undefined') window.ArrowLog = { groupSessions, totals, buckets, parseData, parseInfo, currentEnd, getDb: () => db };
+if (typeof window !== 'undefined') window.PfeilZaehler3000 = { groupSessions, totals, buckets, parseData, parseInfo, currentEnd, getDb: () => db };
 </script>
 </body>
 </html>
