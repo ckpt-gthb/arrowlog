@@ -72,7 +72,7 @@ label input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radiu
 <body>
 <main>
   <h1>PfeilZaehler3000</h1>
-  <div class="sub">Arrows counted automatically · version 1.4 · 8 Oct 2026</div>
+  <div class="sub">Arrows counted automatically · version 1.5 · 10 Oct 2026</div>
 
   <div class="status" id="status">Not connected.</div>
   <button class="btn big" id="connect">Connect pod &amp; sync</button>
@@ -282,7 +282,9 @@ let dev = null, chars = {}, info = null, dumpResolve = null, incoming = [];
 
 function parseInfo(dv) {
   return { total: dv.getUint32(0, true), base: dv.getUint32(4, true), mv: dv.getUint16(8, true),
-           storage: dv.getUint8(10), at: Date.now(), exact: !!(dv.getUint8(11) & 1), active: !!(dv.getUint8(11) & 2), fw: dv.getUint8(12) };
+           storage: dv.getUint8(10), at: Date.now(), exact: !!(dv.getUint8(11) & 1), active: !!(dv.getUint8(11) & 2), fw: dv.getUint8(12),
+           wakes: dv.byteLength >= 20 ? dv.getUint16(13, true) : null, awakePct: dv.byteLength >= 20 ? dv.getUint8(15) : null,
+           uptime: dv.byteLength >= 20 ? dv.getUint32(16, true) : null };
 }
 function parseData(dv) {
   const first = dv.getUint32(0, true);
@@ -297,7 +299,13 @@ function showInfo() {
   if (!info) return;
   const v = info.mv ? (info.mv / 1000).toFixed(2) + ' V' : '–';
   const at = new Date(info.at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  setStatus(`<b>Connected.</b> Pod total ${info.total} · battery ${v} (${at}) · memory ${info.storage}% used`);
+  let diag = '';
+  if (info.uptime !== null) {
+    const h = info.uptime / 3600;
+    const up = h >= 48 ? (h / 24).toFixed(1) + ' days' : h >= 1 ? h.toFixed(1) + ' h' : Math.round(info.uptime / 60) + ' min';
+    diag = `<br><span class="small">${info.active ? 'Awake' : 'Idle'} now · since start ${up}: awake ${info.awakePct}% of the time, woke up ${info.wakes}×</span>`;
+  }
+  setStatus(`<b>Connected.</b> Pod total ${info.total} · battery ${v} (${at}) · memory ${info.storage}% used${diag}`);
 }
 
 let userDisconnect = false, retryTimer = null, retryUntil = 0;
